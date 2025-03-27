@@ -1,10 +1,12 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Query, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { QuotesService } from '../../quotes/quotes.service';
 import { ImageService } from '../services/image.service';
 import { DesignService } from '../../design/services/design.service';
 
 @Controller('image')
 export class ImageController {
+  private readonly logger = new Logger(ImageController.name);
+
   constructor(
     private readonly quotesService: QuotesService,
     private readonly imageService: ImageService,
@@ -73,9 +75,11 @@ export class ImageController {
       });
       return { imageUrl };
     } catch (error) {
-      console.error('Error generating image:', error);
-      throw error;
+      this.logger.error('Error in generateQuoteImage:', error);
+      throw new HttpException(
+        `Image generation failed: ${error.message}`, 
+        HttpStatus.INTERNAL_SERVER_ERROR
+      );
     }
   }
-}
 }

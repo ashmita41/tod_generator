@@ -43,7 +43,7 @@ function App() {
       console.log('Received image URL:', data.imageUrl); // Debug log
       
       // Construct the full URL for the image
-      const fullImageUrl = `${process.env.REACT_APP_API_URL}${data.imageUrl}`;
+      const fullImageUrl = `${process.env.REACT_APP_API_URL}/images/${data.imageUrl}`;
       console.log('Full image URL:', fullImageUrl); // Debug log
       
       setImageUrl(fullImageUrl);
