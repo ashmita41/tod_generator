@@ -40,7 +40,13 @@ function App() {
       }
 
       const data = await response.json();
-      setImageUrl(data.imageUrl);
+      console.log('Received image URL:', data.imageUrl); // Debug log
+      
+      // Construct the full URL for the image
+      const fullImageUrl = `${process.env.REACT_APP_API_URL}${data.imageUrl}`;
+      console.log('Full image URL:', fullImageUrl); // Debug log
+      
+      setImageUrl(fullImageUrl);
     } catch (error) {
       console.error('Error generating image:', error);
       alert('Failed to generate image');
@@ -49,12 +55,23 @@ function App() {
     }
   };
 
-  const downloadImage = () => {
+  const downloadImage = async () => {
     if (imageUrl) {
-      const link = document.createElement('a');
-      link.href = imageUrl;
-      link.download = 'thought-of-the-day.png';
-      link.click();
+      try {
+        const response = await fetch(imageUrl);
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'thought-of-the-day.png';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+      } catch (error) {
+        console.error('Error downloading image:', error);
+        alert('Failed to download image');
+      }
     }
   };
 
@@ -118,6 +135,10 @@ function App() {
               src={imageUrl} 
               alt="Generated Quote" 
               className="mx-auto mb-4 max-w-full rounded-lg shadow-md"
+              onError={(e) => {
+                console.error('Error loading image:', e);
+                alert('Failed to load image');
+              }}
             />
             <button 
               onClick={downloadImage}

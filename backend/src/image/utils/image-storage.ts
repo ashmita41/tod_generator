@@ -21,6 +21,6 @@ export class ImageStorage {
     const buffer = canvas.toBuffer('image/png');
     fs.writeFileSync(filepath, buffer);
     
-    return filepath;
+    return `/images/${filename}`;
   }
 }
