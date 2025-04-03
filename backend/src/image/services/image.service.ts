@@ -1,5 +1,6 @@
+// src/image/services/image.service.ts
 import { Injectable, Logger } from '@nestjs/common';
-import { createCanvas, loadImage, registerFont } from 'canvas';
+import { createCanvas } from 'canvas';
 import { ImageGenerationOptions } from '../interfaces/image-generation.interface';
 import { IMAGE_CONFIG } from '../config/image-config';
 import { TextUtilsService } from './text-utils.service';
@@ -8,13 +9,14 @@ import { ImageStorage } from '../utils/image-storage';
 @Injectable()
 export class ImageService {
   private readonly logger = new Logger(ImageService.name);
+  
   constructor(private textUtilsService: TextUtilsService) {}
   
   async generateQuoteImage(
     options: ImageGenerationOptions
   ): Promise<string> {
     try {
-      const { quote, author, design } = options;
+      const { quote, author, title, design } = options;
       
       // Create canvas with Instagram square post size
       const canvas = createCanvas(IMAGE_CONFIG.WIDTH, IMAGE_CONFIG.HEIGHT);
@@ -24,72 +26,122 @@ export class ImageService {
       ctx.fillStyle = design.background.color;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       
-      // Set title text style (Thought of the Day)
-      ctx.font = `bold 72px ${design.typography.title.fontFamily || 'Arial'}`;
-      ctx.fillStyle = design.typography.title.color || '#000000';
-      const titleText = 'Thought of the Day';
+      // Get title font properties
+      const titleFont = design.typography.title || {
+        fontFamily: IMAGE_CONFIG.TEXT.TITLE.DEFAULT_FAMILY,
+        fontSize: IMAGE_CONFIG.TEXT.TITLE.DEFAULT_FONT_SIZE,
+        color: IMAGE_CONFIG.TEXT.TITLE.DEFAULT_COLOR,
+        weight: IMAGE_CONFIG.TEXT.TITLE.DEFAULT_WEIGHT,
+        alignment: 'center'
+      };
+      
+      // Set title text style
+      ctx.font = `${titleFont.weight} ${titleFont.fontSize}px ${titleFont.fontFamily}`;
+      ctx.fillStyle = titleFont.color;
+      const titleText = title || 'Thought of the Day';
       const titleWidth = ctx.measureText(titleText).width;
       
-      // Set quote text style with increased size
-      ctx.font = `${design.typography.quote.weight || 'normal'} 54px ${design.typography.quote.fontFamily || 'Arial'}`;
+      // Get quote font properties
+      const quoteFont = design.typography.quote || {
+        fontFamily: IMAGE_CONFIG.TEXT.QUOTE.DEFAULT_FAMILY,
+        fontSize: IMAGE_CONFIG.TEXT.QUOTE.DEFAULT_FONT_SIZE,
+        color: IMAGE_CONFIG.TEXT.QUOTE.DEFAULT_COLOR,
+        weight: IMAGE_CONFIG.TEXT.QUOTE.DEFAULT_WEIGHT,
+        alignment: 'center'
+      };
       
-      // Calculate max width for text
-      const maxTextWidth = canvas.width - (IMAGE_CONFIG.MARGINS.HORIZONTAL * 2);
+      // Set quote text style
+      ctx.font = `${quoteFont.weight} ${quoteFont.fontSize}px ${quoteFont.fontFamily}`;
+      
+      // Calculate max width for text based on layout margins
+      const maxTextWidth = canvas.width - (design.layout.margins.left + design.layout.margins.right);
       
       // Wrap text
       const wrappedQuote = this.textUtilsService.wrapText(
         ctx, 
         quote, 
         maxTextWidth, 
-        54 // Increased font size
+        quoteFont.fontSize
       );
       
       // Calculate total height of text elements
-      const titleHeight = 72;
-      const quoteLineHeight = 60;
-      const authorHeight = 36;
-      const titleToQuoteGap = 70; // Increased gap between title and quote
-      const totalTextHeight = titleHeight + 
-                               titleToQuoteGap +
-                               (wrappedQuote.length * quoteLineHeight) + 
-                               authorHeight + 
-                               100; // Additional spacing
+      const titleHeight = titleFont.fontSize;
+      const quoteLineHeight = IMAGE_CONFIG.SPACING.QUOTE_LINE_HEIGHT;
+      const authorHeight = IMAGE_CONFIG.TEXT.AUTHOR.DEFAULT_FONT_SIZE;
+      const titleToQuoteGap = IMAGE_CONFIG.SPACING.TITLE_TO_QUOTE;
+      const quoteToAuthorGap = IMAGE_CONFIG.SPACING.QUOTE_TO_AUTHOR;
       
-      // Calculate starting Y position to center everything
-      const startY = (canvas.height - totalTextHeight) / 2;
+      const totalTextHeight = titleHeight + 
+                              titleToQuoteGap +
+                              (wrappedQuote.length * quoteLineHeight) + 
+                              quoteToAuthorGap +
+                              authorHeight + 
+                              IMAGE_CONFIG.SPACING.ADDITIONAL;
+      
+      // Calculate starting Y position based on layout
+      let startY = design.layout.margins.top;
+      
+      if (design.layout.type === 'centered') {
+        startY = (canvas.height - totalTextHeight) / 2;
+      }
       
       // Render title
-      ctx.font = `bold 72px ${design.typography.title.fontFamily || 'Arial'}`;
-      ctx.fillStyle = design.typography.title.color || '#000000';
-      ctx.fillText(
-        titleText, 
-        (canvas.width - titleWidth) / 2, 
-        startY
-      );
+      if (design.layout.type === 'centered') {
+        ctx.textAlign = 'center';
+        ctx.fillText(titleText, canvas.width / 2, startY);
+      } else if (design.layout.type === 'left-aligned') {
+        ctx.textAlign = 'left';
+        ctx.fillText(titleText, design.layout.margins.left, startY);
+      } else if (design.layout.type === 'right-aligned') {
+        ctx.textAlign = 'right';
+        ctx.fillText(titleText, canvas.width - design.layout.margins.right, startY);
+      }
+      
+      // Get author font properties
+      const authorFont = design.typography.author || {
+        fontFamily: IMAGE_CONFIG.TEXT.AUTHOR.DEFAULT_FAMILY,
+        fontSize: IMAGE_CONFIG.TEXT.AUTHOR.DEFAULT_FONT_SIZE,
+        color: IMAGE_CONFIG.TEXT.AUTHOR.DEFAULT_COLOR,
+        weight: IMAGE_CONFIG.TEXT.AUTHOR.DEFAULT_WEIGHT,
+        alignment: 'center'
+      };
       
       // Render quote text
-      ctx.font = `${design.typography.quote.weight || 'normal'} 54px ${design.typography.quote.fontFamily || 'Arial'}`;
-      ctx.fillStyle = design.typography.quote.color || '#000000';
+      ctx.font = `${quoteFont.weight} ${quoteFont.fontSize}px ${quoteFont.fontFamily}`;
+      ctx.fillStyle = quoteFont.color;
+      
+      let quoteY = startY + titleHeight + titleToQuoteGap;
+      
       wrappedQuote.forEach((line, index) => {
-        const lineWidth = ctx.measureText(line).width;
-        ctx.fillText(
-          line, 
-          (canvas.width - lineWidth) / 2, 
-          startY + titleHeight + titleToQuoteGap + (index * quoteLineHeight)
-        );
+        if (design.layout.type === 'centered') {
+          ctx.textAlign = 'center';
+          ctx.fillText(line, canvas.width / 2, quoteY + (index * quoteLineHeight));
+        } else if (design.layout.type === 'left-aligned') {
+          ctx.textAlign = 'left';
+          ctx.fillText(line, design.layout.margins.left, quoteY + (index * quoteLineHeight));
+        } else if (design.layout.type === 'right-aligned') {
+          ctx.textAlign = 'right';
+          ctx.fillText(line, canvas.width - design.layout.margins.right, quoteY + (index * quoteLineHeight));
+        }
       });
       
-      // Render author with slightly smaller font
-      ctx.font = `${design.typography.author.weight || 'italic'} 36px ${design.typography.author.fontFamily || 'Arial'}`;
-      ctx.fillStyle = design.typography.author.color || '#555555';
+      // Render author
+      ctx.font = `${authorFont.weight} ${authorFont.fontSize}px ${authorFont.fontFamily}`;
+      ctx.fillStyle = authorFont.color;
       
       const authorText = `- ${author}`;
-      const authorWidth = ctx.measureText(authorText).width;
-      ctx.fillText(
-        authorText, 
-        (canvas.width - authorWidth) / 2, 
-        startY + titleHeight + titleToQuoteGap + (wrappedQuote.length * quoteLineHeight) + 50
-      );
+      const authorY = quoteY + (wrappedQuote.length * quoteLineHeight) + quoteToAuthorGap;
+      
+      if (design.layout.type === 'centered') {
+        ctx.textAlign = 'center';
+        ctx.fillText(authorText, canvas.width / 2, authorY);
+      } else if (design.layout.type === 'left-aligned') {
+        ctx.textAlign = 'left';
+        ctx.fillText(authorText, design.layout.margins.left, authorY);
+      } else if (design.layout.type === 'right-aligned') {
+        ctx.textAlign = 'right';
+        ctx.fillText(authorText, canvas.width - design.layout.margins.right, authorY);
+      }
       
       // Save and return image path
       const imageUrl = await ImageStorage.saveImage(canvas);
