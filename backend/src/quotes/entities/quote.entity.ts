@@ -1,29 +1,6 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, Unique } from 'typeorm';
+// This file is kept for backward compatibility
+// Import the actual model from the models directory
+import { Quote } from '../models/quote.model';
 
-@Entity('quotes')
-@Unique(['text', 'author'])
-export class Quote {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
-
-  @Column('text')
-  text: string;
-
-  @Column('text')
-  author: string;
-
-  @Column('text')
-  source: string;
-
-  @Column('timestamp', { nullable: true })
-  lastUsedAt: Date | null;
-
-  @Column('integer', { default: 0 })
-  usageCount: number;
-
-  @CreateDateColumn()
-  createdAt: Date;
-
-  @Column('text', { nullable: true })
-  category?: string;
-}
+// Re-export for backward compatibility
+export { Quote };

@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Quote } from './entities/quote.entity';
+import { PrismaService } from '../prisma/prisma.service';
+import { Quote } from './models/quote.model';
 import axios from 'axios';
 
 interface QuoteSource {
@@ -32,24 +31,30 @@ export class QuotesService {
     }
   ];
 
-  constructor(
-    @InjectRepository(Quote)
-    private quoteRepository: Repository<Quote>
-  ) {}
+  constructor(private prisma: PrismaService) {}
 
   async fetchNewQuotes(limit = 10): Promise<Quote[]> {
+    this.logger.log(`Starting to fetch new quotes, limit: ${limit}`);
     const allFetchedQuotes: Quote[] = [];
 
     for (const source of this.quoteSources) {
       try {
+        this.logger.log(`Fetching quotes from ${source.name}`);
         const quotes = await this.fetchQuotesFromSource(source, limit);
-        const savedQuotes = await this.saveQuotes(quotes, source.name);
-        allFetchedQuotes.push(...savedQuotes);
+        this.logger.log(`Got ${quotes.length} new quotes from ${source.name}`);
+        
+        if (quotes.length > 0) {
+          const savedQuotes = await this.saveQuotes(quotes, source.name);
+          allFetchedQuotes.push(...savedQuotes);
+        } else {
+          this.logger.log(`No new quotes to save from ${source.name}`);
+        }
       } catch (error) {
         this.logger.error(`Failed to fetch quotes from ${source.name}`, error);
       }
     }
 
+    this.logger.log(`Total new quotes fetched and saved: ${allFetchedQuotes.length}`);
     return allFetchedQuotes;
   }
 
@@ -60,9 +65,11 @@ export class QuotesService {
       try {
         const response = await axios.get(source.url);
         const transformedQuote = source.transform(response.data);
+        
+        this.logger.debug(`Got quote from ${source.name}: "${transformedQuote.text.substring(0, 30)}..." by ${transformedQuote.author}`);
 
         // Check if quote already exists
-        const existingQuote = await this.quoteRepository.findOne({
+        const existingQuote = await this.prisma.quote.findFirst({
           where: {
             text: transformedQuote.text,
             author: transformedQuote.author
@@ -76,6 +83,9 @@ export class QuotesService {
             source: source.name,
             lastUsedAt: null
           });
+          this.logger.debug(`Added new quote to batch: "${transformedQuote.text.substring(0, 30)}..."`);
+        } else {
+          this.logger.debug(`Quote already exists in database, skipping`);
         }
       } catch (error) {
         this.logger.error(`Error fetching quote from ${source.name}`, error);
@@ -86,9 +96,27 @@ export class QuotesService {
   }
 
   private async saveQuotes(quotes: Partial<Quote>[], sourceName: string): Promise<Quote[]> {
+    if (quotes.length === 0) {
+      this.logger.log(`No quotes to save from ${sourceName}`);
+      return [];
+    }
+    
     try {
-      const savedQuotes = await this.quoteRepository.save(quotes as Quote[]);
-      this.logger.log(`Saved ${savedQuotes.length} quotes from ${sourceName}`);
+      const savedQuotes: Quote[] = [];
+      
+      for (const quote of quotes) {
+        try {
+          const savedQuote = await this.prisma.quote.create({
+            data: quote as any,
+          });
+          savedQuotes.push(savedQuote);
+          this.logger.debug(`Saved quote: "${quote.text?.substring(0, 30)}..."`);
+        } catch (error) {
+          this.logger.error(`Failed to save individual quote: ${error.message}`);
+        }
+      }
+      
+      this.logger.log(`Successfully saved ${savedQuotes.length} quotes from ${sourceName}`);
       return savedQuotes;
     } catch (error) {
       this.logger.error(`Failed to save quotes from ${sourceName}`, error);
@@ -98,21 +126,51 @@ export class QuotesService {
 
   async getRandomQuote(): Promise<Quote | null> {
     try {
-      // Find a quote that hasn't been used recently
-      const quote = await this.quoteRepository
-        .createQueryBuilder('quote')
-        .orderBy('RANDOM()')
-        .getOne();
+      this.logger.log('Attempting to get a random quote');
+      const quotesCount = await this.prisma.quote.count();
+      
+      this.logger.log(`Total quotes in database: ${quotesCount}`);
+      
+      if (quotesCount === 0) {
+        this.logger.log('No quotes available in database');
+        // If no quotes exist, try to fetch some
+        const newQuotes = await this.fetchNewQuotes(5);
+        if (newQuotes.length > 0) {
+          this.logger.log(`Fetched ${newQuotes.length} new quotes, returning first one`);
+          return newQuotes[0];
+        }
+        this.logger.log('Could not fetch any new quotes');
+        return null;
+      }
+      
+      const skip = Math.floor(Math.random() * quotesCount);
+      this.logger.log(`Selecting quote at position ${skip}`);
+      
+      const [quote] = await this.prisma.quote.findMany({
+        take: 1,
+        skip: skip,
+      });
 
       if (quote) {
+        this.logger.log(`Found quote: "${quote.text.substring(0, 30)}..." by ${quote.author}`);
+        
         // Update last used timestamp
-        quote.lastUsedAt = new Date();
-        await this.quoteRepository.save(quote);
+        const updatedQuote = await this.prisma.quote.update({
+          where: { id: quote.id },
+          data: { 
+            lastUsedAt: new Date(),
+            usageCount: { increment: 1 }
+          }
+        });
+        
+        this.logger.log(`Updated lastUsedAt for quote ID ${quote.id}`);
+        return updatedQuote;
       }
 
-      return quote;
+      this.logger.log('No quote found despite having count > 0');
+      return null;
     } catch (error) {
-      this.logger.error('Failed to retrieve random quote', error);
+      this.logger.error(`Failed to retrieve random quote: ${error.message}`, error);
       return null;
     }
   }
@@ -124,7 +182,9 @@ export class QuotesService {
 
   async addQuoteCategory(quoteId: string, category: string): Promise<Quote | null> {
     try {
-      const quote = await this.quoteRepository.findOne({ where: { id: quoteId } });
+      const quote = await this.prisma.quote.findUnique({
+        where: { id: quoteId }
+      });
       
       if (!quote) {
         this.logger.error(`Quote with ID ${quoteId} not found`);
@@ -132,11 +192,12 @@ export class QuotesService {
       }
 
       // Update category
-      quote.category = category;
+      const updatedQuote = await this.prisma.quote.update({
+        where: { id: quoteId },
+        data: { category }
+      });
       
-      const updatedQuote = await this.quoteRepository.save(quote);
       this.logger.log(`Added category ${category} to quote ID ${quoteId}`);
-      
       return updatedQuote;
     } catch (error) {
       this.logger.error(`Failed to add category to quote ID ${quoteId}`, error);
@@ -146,7 +207,7 @@ export class QuotesService {
 
   // Debug method to show all quotes
   async debugShowAllQuotes(): Promise<Quote[]> {
-    const quotes = await this.quoteRepository.find();
+    const quotes = await this.prisma.quote.findMany();
     this.logger.log(`Total Quotes in Database: ${quotes.length}`);
     quotes.forEach(quote => {
       this.logger.log(`Quote: ${quote.text} by ${quote.author} (Source: ${quote.source})`);
