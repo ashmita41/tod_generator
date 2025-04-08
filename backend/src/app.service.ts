@@ -8,14 +8,8 @@ export class AppService implements OnModuleInit {
   constructor(private readonly quotesService: QuotesService) {}
 
   async onModuleInit() {
-    this.logger.log('Application starting up - initializing quotes');
-    try {
-      // Automatically fetch quotes when the application starts
-      const quotes = await this.quotesService.fetchNewQuotes(10);
-      this.logger.log(`Successfully fetched ${quotes.length} quotes during initialization`);
-    } catch (error) {
-      this.logger.error('Failed to fetch quotes during initialization', error);
-    }
+    this.logger.log('Initializing App Service...');
+    // Nothing to do here since QuotesService handles initialization
   }
 
   getHello(): string {

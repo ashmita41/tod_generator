@@ -6,13 +6,11 @@ import { QuotesModule } from './quotes/quotes.module';
 import { DesignModule } from './design/design.module';
 import { ImageModule } from './image/image.module';
 import { PrismaModule } from './prisma/prisma.module';
-import databaseConfig from './config/database.config';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [databaseConfig]
     }),
     PrismaModule,
     QuotesModule,

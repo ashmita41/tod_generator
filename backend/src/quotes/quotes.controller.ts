@@ -1,6 +1,6 @@
 import { Controller, Get, NotFoundException } from '@nestjs/common';
 import { QuotesService } from './quotes.service';
-import { Quote } from './models/quote.model';
+import { Quote } from '@prisma/client';
 
 @Controller('quotes')
 export class QuotesController {
